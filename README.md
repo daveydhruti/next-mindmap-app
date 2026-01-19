@@ -60,11 +60,7 @@ Available npm scripts:
 * `npm run lint` – Run ESLint
 
 ## License
-This project is licensed under the **MIT License**.
-
-You are free to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of this software, with minimal restrictions.
-
-See the LICENSE file for details.
+This project is licensed under the **MIT License**. See the [LICENSE](./LICENSE) file for details.
 
 ---
 
