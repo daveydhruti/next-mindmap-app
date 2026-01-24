@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Plus, Menu, Download, Upload } from 'lucide-react';
+import { Plus, Menu, Download, Upload, RefreshCw, FolderOpen } from 'lucide-react';
 
 interface Node {
   id: number;
@@ -10,12 +10,11 @@ interface Node {
   y: number;
   label: string;
   connections: number[];
+  isOrphan: boolean; // Grey node if referenced but doesn't exist as a file
 }
 
 export default function MindMapPage() {
-  const [nodes, setNodes] = useState<Node[]>([
-    { id: 1, x: 400, y: 300, label: 'Untitled', connections: [] }
-  ]);
+  const [nodes, setNodes] = useState<Node[]>([]);
   const [dragging, setDragging] = useState<number | null>(null);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [selectedNode, setSelectedNode] = useState<number | null>(null);
@@ -25,6 +24,9 @@ export default function MindMapPage() {
   const [editInput, setEditInput] = useState('');
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
   const [menuOpen, setMenuOpen] = useState(false);
+  const [directoryPath, setDirectoryPath] = useState('');
+  const [showPathDialog, setShowPathDialog] = useState(true);
+  const [autoRefresh, setAutoRefresh] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -57,8 +59,7 @@ export default function MindMapPage() {
       node.connections.forEach(targetId => {
         const target = nodes.find(n => n.id === targetId);
         if (target) {
-          // Calculate the center of the circles (accounting for text above)
-          const nodeCenterY = node.y + 14; // 14px offset for text height
+          const nodeCenterY = node.y + 14;
           const targetCenterY = target.y + 14;
           
           ctx.beginPath();
@@ -82,6 +83,48 @@ export default function MindMapPage() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedNode]);
+
+  useEffect(() => {
+    console.log('Current Mind Map Structure:', JSON.stringify(nodes, null, 2));
+  }, [nodes]);
+
+  useEffect(() => {
+    if (!autoRefresh || !directoryPath || showPathDialog) return;
+
+    const interval = setInterval(() => {
+      loadFromDirectory();
+    }, 3000); // Refresh every 3 seconds
+
+    return () => clearInterval(interval);
+  }, [autoRefresh, directoryPath, showPathDialog]);
+
+  const loadFromDirectory = async () => {
+    if (!directoryPath) {
+      alert('Please enter a directory path');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/read-markdown', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: directoryPath })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        alert(`Error: ${error.error}`);
+        return;
+      }
+
+      const data = await response.json();
+      setNodes(data.nodes);
+      setShowPathDialog(false);
+    } catch (error) {
+      alert('Failed to load directory. Make sure the Next.js server is running.');
+      console.error(error);
+    }
+  };
 
   const handleMouseDown = (e: React.MouseEvent, nodeId: number) => {
     if (e.button !== 0) return;
@@ -127,7 +170,8 @@ export default function MindMapPage() {
       x: parentNode.x + Math.cos(angle) * distance,
       y: parentNode.y + Math.sin(angle) * distance,
       label: `Untitled ${newId}`,
-      connections: [parentId]
+      connections: [parentId],
+      isOrphan: false
     };
 
     setNodes(prev => [
@@ -182,7 +226,7 @@ export default function MindMapPage() {
       setNodes(prev => prev.map(n => 
         n.id === editDialog.nodeId ? { ...n, label: editInput.trim() } : n
       ));
-    } 
+    }
     setEditDialog(null);
     setEditInput('');
   };
@@ -199,7 +243,8 @@ export default function MindMapPage() {
         x: node.x,
         y: node.y,
         label: node.label,
-        connections: node.connections
+        connections: node.connections,
+        isOrphan: node.isOrphan
       }))
     };
 
@@ -271,7 +316,11 @@ export default function MindMapPage() {
             <span className="text-white text-sm font-medium select-none mb-2 whitespace-nowrap">
               {node.label}
             </span>
-            <div className={`w-4 h-4 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full shadow-lg hover:shadow-xl hover:scale-125 transition-all duration-200 ${
+            <div className={`w-4 h-4 rounded-full shadow-lg hover:shadow-xl hover:scale-125 transition-all duration-200 ${
+              node.isOrphan 
+                ? 'bg-gray-500' 
+                : 'bg-gradient-to-br from-purple-500 to-pink-500'
+            } ${
               selectedNode === node.id ? 'ring-4 ring-yellow-400 ring-offset-2 ring-offset-gray-900' : ''
             }`} />
           </div>
@@ -324,11 +373,8 @@ export default function MindMapPage() {
       )}
 
       <div className="fixed top-4 left-4 bg-gray-800 px-4 py-3 rounded-lg shadow-lg border border-gray-700">
-        <p className="text-white text-lg">
-          <strong>Mind map app</strong>
-        </p>
-        <p className="text-grey-800 text-sm">
-          <strong className="text-white">Tip:</strong> Click a node to select it, then add children
+        <p className="text-gray-300 text-sm">
+          <strong className="text-white">Tip:</strong> Click a node to select it
         </p>
       </div>
 
@@ -344,7 +390,34 @@ export default function MindMapPage() {
         </button>
 
         {menuOpen && (
-          <div className="absolute top-16 right-0 bg-gray-800 rounded-lg shadow-xl border border-gray-700 py-2 min-w-[150px]">
+          <div className="absolute top-16 right-0 bg-gray-800 rounded-lg shadow-xl border border-gray-700 py-2 min-w-[180px]">
+            <button
+              onClick={() => {
+                setShowPathDialog(true);
+                setMenuOpen(false);
+              }}
+              className="w-full px-4 py-2 text-left text-white hover:bg-gray-700 transition-colors flex items-center gap-2"
+            >
+              <FolderOpen size={18} />
+              Load Directory
+            </button>
+            <button
+              onClick={loadFromDirectory}
+              className="w-full px-4 py-2 text-left text-white hover:bg-gray-700 transition-colors flex items-center gap-2"
+            >
+              <RefreshCw size={18} />
+              Refresh Now
+            </button>
+            <button
+              onClick={() => {
+                setAutoRefresh(!autoRefresh);
+                setMenuOpen(false);
+              }}
+              className="w-full px-4 py-2 text-left text-white hover:bg-gray-700 transition-colors flex items-center gap-2"
+            >
+              <RefreshCw size={18} className={autoRefresh ? 'text-green-400' : ''} />
+              Auto-Refresh: {autoRefresh ? 'ON' : 'OFF'}
+            </button>
             <button
               onClick={exportData}
               className="w-full px-4 py-2 text-left text-white hover:bg-gray-700 transition-colors flex items-center gap-2"
@@ -370,6 +443,40 @@ export default function MindMapPage() {
         onChange={importData}
         className="hidden"
       />
+
+      {showPathDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg shadow-2xl border border-gray-700 p-6 w-[500px]">
+            <h3 className="text-white text-lg font-semibold mb-4">Enter Markdown Directory Path</h3>
+            <input
+              type="text"
+              value={directoryPath}
+              onChange={(e) => setDirectoryPath(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') loadFromDirectory();
+                if (e.key === 'Escape') setShowPathDialog(false);
+              }}
+              className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-purple-500 mb-4"
+              placeholder="e.g., /Users/username/Documents/notes"
+              autoFocus
+            />
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowPathDialog(false)}
+                className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={loadFromDirectory}
+                className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg hover:shadow-lg transition-all"
+              >
+                Load Directory
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {editDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
