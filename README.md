@@ -124,4 +124,4 @@ This project is licensed under the **MIT License**. See the [LICENSE](./LICENSE)
 
 ---
 
-Parts of this project (including writing and improvements) were assisted by Claude AI.
+Parts of this project were assisted by Claude AI.
